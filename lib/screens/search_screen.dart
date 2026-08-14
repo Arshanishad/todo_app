@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:todo/screens/recent_searches.dart';
-
 import '../providers/user_provider.dart';
-import 'repositories_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({
@@ -26,15 +24,29 @@ class _SearchScreenState
     super.dispose();
   }
 
-  void search() {
-    FocusScope.of(context).unfocus();
+void search() {
+  final username = controller.text.trim();
 
-    ref
-        .read(userProvider.notifier)
-        .searchUser(
-          controller.text,
-        );
+  if (username.isEmpty) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please enter a GitHub username',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    return;
   }
+
+  FocusScope.of(context).unfocus();
+
+  ref
+      .read(userProvider.notifier)
+      .searchUser(username);
+}
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +67,11 @@ class _SearchScreenState
               controller: controller,
               textInputAction:
                   TextInputAction.search,
+                  onChanged: (value) {
+    if (value.trim().isEmpty) {
+      ref.read(userProvider.notifier).clearUser();
+    }
+  },
               onSubmitted: (_) => search(),
               decoration: InputDecoration(
                 hintText: 'GitHub username',

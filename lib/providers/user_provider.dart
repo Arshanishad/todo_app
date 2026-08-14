@@ -65,4 +65,8 @@ class UserNotifier
       );
     }
   }
+
+  void clearUser() {
+  state = const AsyncData(null);
+}
 }
