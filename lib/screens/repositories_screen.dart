@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../cubit/repository_cubit.dart';
-import '../cubit/repository_state.dart';
+import '../models/repository_model.dart';
+import '../providers/repository_provider.dart';
 
-class RepositoriesScreen extends StatefulWidget {
+class RepositoriesScreen
+    extends ConsumerStatefulWidget {
   final String username;
 
   const RepositoriesScreen({
@@ -13,19 +14,23 @@ class RepositoriesScreen extends StatefulWidget {
   });
 
   @override
-  State<RepositoriesScreen> createState() =>
+  ConsumerState<RepositoriesScreen> createState() =>
       _RepositoriesScreenState();
 }
 
 class _RepositoriesScreenState
-    extends State<RepositoriesScreen> {
+    extends ConsumerState<RepositoriesScreen> {
   bool sortByStars = true;
 
   @override
   Widget build(BuildContext context) {
+    final repositories = ref.watch(
+      repositoriesProvider(widget.username),
+    );
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.username} Repositories'),
+        title: const Text('Repositories'),
       ),
       body: Column(
         children: [
@@ -35,137 +40,90 @@ class _RepositoriesScreenState
               segments: const [
                 ButtonSegment(
                   value: true,
-                  label: Text('Stars'),
                   icon: Icon(Icons.star),
+                  label: Text('Stars'),
                 ),
                 ButtonSegment(
                   value: false,
-                  label: Text('Recently Updated'),
                   icon: Icon(Icons.update),
+                  label: Text('Updated'),
                 ),
               ],
               selected: {sortByStars},
-              onSelectionChanged: (selection) {
-                final selected = selection.first;
-
+              onSelectionChanged: (value) {
                 setState(() {
-                  sortByStars = selected;
+                  sortByStars = value.first;
                 });
-
-                if (selected) {
-                  context
-                      .read<RepositoryCubit>()
-                      .sortByStars();
-                } else {
-                  context
-                      .read<RepositoryCubit>()
-                      .sortByRecentlyUpdated();
-                }
               },
             ),
           ),
 
           Expanded(
-            child: BlocBuilder<RepositoryCubit, RepositoryState>(
-              builder: (context, state) {
-                if (state is RepositoryLoading) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
+            child: repositories.when(
+              loading: () {
+                return const Center(
+                  child:
+                      CircularProgressIndicator(),
+                );
+              },
+
+              error: (error, _) {
+                return Center(
+                  child: Text(
+                    error.toString(),
+                  ),
+                );
+              },
+
+              data: (data) {
+                final list =
+                    List<RepositoryModel>.from(
+                  data,
+                );
+
+                if (sortByStars) {
+                  list.sort(
+                    (a, b) => b.stars.compareTo(
+                      a.stars,
+                    ),
                   );
-                }
+                } else {
+                  list.sort(
+                    (a, b) {
+                      if (a.updatedAt == null) {
+                        return 1;
+                      }
 
-                if (state is RepositoryError) {
-                  return Center(
-                    child: Text(state.message),
-                  );
-                }
+                      if (b.updatedAt == null) {
+                        return -1;
+                      }
 
-                if (state is RepositorySuccess) {
-                  if (state.repositories.isEmpty) {
-                    return const Center(
-                      child: Text('No repositories found'),
-                    );
-                  }
-
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: state.repositories.length,
-                    itemBuilder: (context, index) {
-                      final repo =
-                          state.repositories[index];
-
-                      return Card(
-                        margin:
-                            const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding:
-                              const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                repo.name,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight:
-                                      FontWeight.bold,
-                                ),
-                              ),
-
-                              const SizedBox(height: 8),
-
-                              if (repo.description != null)
-                                Text(
-                                  repo.description!,
-                                  maxLines: 3,
-                                  overflow:
-                                      TextOverflow.ellipsis,
-                                ),
-
-                              const SizedBox(height: 12),
-
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.star,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text('${repo.stars}'),
-
-                                  const SizedBox(width: 20),
-
-                                  const Icon(
-                                    Icons.code,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    repo.language ??
-                                        'Unknown',
-                                  ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 8),
-
-                              Text(
-                                'Updated: ${_formatDate(repo.updatedAt)}',
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      return b.updatedAt!
+                          .compareTo(
+                        a.updatedAt!,
                       );
                     },
                   );
                 }
 
-                return const Center(
-                  child: Text('No repositories loaded'),
+                if (list.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No repositories found.',
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding:
+                      const EdgeInsets.all(12),
+                  itemCount: list.length,
+                  itemBuilder:
+                      (context, index) {
+                    return RepositoryCard(
+                      repository: list[index],
+                    );
+                  },
                 );
               },
             ),
@@ -174,14 +132,85 @@ class _RepositoriesScreenState
       ),
     );
   }
+}
 
-  String _formatDate(DateTime? date) {
+class RepositoryCard extends StatelessWidget {
+  final RepositoryModel repository;
+
+  const RepositoryCard({
+    super.key,
+    required this.repository,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              repository.name,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              repository.description ??
+                  'No description',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+
+            const SizedBox(height: 15),
+
+            Row(
+              children: [
+                const Icon(
+                  Icons.star,
+                  size: 18,
+                ),
+                const SizedBox(width: 5),
+                Text('${repository.stars}'),
+
+                const SizedBox(width: 20),
+
+                const Icon(
+                  Icons.code,
+                  size: 18,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  repository.language ?? 'Unknown',
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              'Updated: ${formatDate(repository.updatedAt)}',
+              style: const TextStyle(
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String formatDate(DateTime? date) {
     if (date == null) {
       return 'Unknown';
     }
 
-    return '${date.day.toString().padLeft(2, '0')}/'
-        '${date.month.toString().padLeft(2, '0')}/'
-        '${date.year}';
+    return '${date.day}/${date.month}/${date.year}';
   }
 }
